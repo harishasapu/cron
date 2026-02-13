@@ -1,0 +1,16 @@
+name: Manual Workflow
+
+# Allows manual trigger from GitHub UI
+on:
+  workflow_dispatch:
+
+jobs:
+  say-hello:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Print hello message
+        run: echo "Hello, this workflow was triggered manually!"
