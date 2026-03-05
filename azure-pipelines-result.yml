@@ -1,0 +1,70 @@
+# Docker
+# Build and push an image to Azure Container Registry
+
+trigger:
+  paths:
+    include:
+      - result/*
+
+resources:
+- repo: self
+
+variables:
+  dockerRegistryServiceConnection: 'fb744bb3-6eed-4272-9281-accc2a07d712'
+  imageRepository: 'resultapp'
+  containerRegistry: 'harishasapu004.azurecr.io'
+  dockerfilePath: '$(Build.SourcesDirectory)/result/Dockerfile'
+  tag: '$(Build.BuildId)'
+
+pool: 'agent'
+
+stages:
+- stage: Build
+  displayName: Build and push stage
+  jobs:
+  - job: Build
+    displayName: Build
+    steps:
+    - checkout: self
+      persistCredentials: true
+      fetchDepth: 0
+
+    - task: Docker@2
+      displayName: Build and push an image to container registry
+      inputs:
+        command: buildAndPush
+        repository: $(imageRepository)
+        dockerfile: $(dockerfilePath)
+        containerRegistry: $(dockerRegistryServiceConnection)
+        tags: |
+          $(tag)
+        arguments: '--platform linux/amd64'
+
+    - bash: |
+        set -ex
+        
+        cd $(Build.SourcesDirectory)
+        
+        # Setup branch
+        git fetch origin
+        git checkout -B main origin/main
+        
+        echo "=== BEFORE UPDATE ==="
+        grep "image:" k8s-specifications/result-deployment.yaml
+        
+        # Update to match ANY resultapp image (handles both dockersamples and ACR)
+        sed -i "s|image: .*resultapp.*|image: $(containerRegistry)/$(imageRepository):$(tag)|g" k8s-specifications/result-deployment.yaml
+        
+        echo "=== AFTER UPDATE ==="
+        grep "image:" k8s-specifications/result-deployment.yaml
+        
+        git config user.email "pipeline@azure.com"
+        git config user.name "Azure Pipeline"
+        
+        git add k8s-specifications/result-deployment.yaml
+        git commit -m "Update result image to $(tag) [skip ci]" || echo "No changes"
+        
+        git push https://$(MY_PAT)@dev.azure.com/21345A0519/vote/_git/vote main
+      displayName: 'Update Manifest'
+      env:
+        MY_PAT: $(MY_PAT)

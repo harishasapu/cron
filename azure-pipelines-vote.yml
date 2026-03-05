@@ -1,0 +1,72 @@
+# Docker
+# Build and push an image to Azure Container Registry
+
+trigger:
+  paths:
+    include:
+      - vote/*
+
+resources:
+- repo: self
+
+variables:
+  dockerRegistryServiceConnection: '6a2b62c2-4dc3-444f-b210-317beb53f801'
+  imageRepository: 'voteapp'
+  containerRegistry: 'harishasapu004.azurecr.io'
+  dockerfilePath: '$(Build.SourcesDirectory)/vote/Dockerfile'
+  tag: '$(Build.BuildId)'
+
+pool: 'agent'
+
+stages:
+- stage: Build
+  displayName: Build and push stage
+  jobs:
+  - job: Build
+    steps:
+    - checkout: self
+      persistCredentials: true
+      fetchDepth: 0  # Full history, not shallow
+
+    - task: Docker@2
+      displayName: Build and push image
+      inputs:
+        command: buildAndPush
+        repository: $(imageRepository)
+        dockerfile: $(dockerfilePath)
+        containerRegistry: $(dockerRegistryServiceConnection)
+        tags: |
+          $(tag)
+        arguments: '--platform linux/amd64'
+
+    - bash: |
+        set -ex
+        
+        cd $(Build.SourcesDirectory)
+        
+        # Show branches
+        git branch -a
+        
+        # Setup branch tracking
+        git fetch origin
+        git checkout -B main origin/main
+        
+        echo "=== BEFORE UPDATE ==="
+        grep "image:" k8s-specifications/vote-deployment.yaml
+        
+        # Update image tag
+        sed -i "s|image: .*voteapp.*|image: $(containerRegistry)/$(imageRepository):$(tag)|g" k8s-specifications/vote-deployment.yaml
+        
+        echo "=== AFTER UPDATE ==="
+        grep "image:" k8s-specifications/vote-deployment.yaml
+        
+        git config user.email "pipeline@azure.com"
+        git config user.name "Azure Pipeline"
+        
+        git add k8s-specifications/vote-deployment.yaml
+        git commit -m "Update vote image to $(tag) [skip ci]" || echo "No changes"
+        
+        git push https://$(MY_PAT)@dev.azure.com/21345A0519/vote/_git/vote main
+      displayName: 'Update Manifest'
+      env:
+        MY_PAT: $(MY_PAT)
